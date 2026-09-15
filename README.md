@@ -14,6 +14,8 @@ Your local weather, large and readable. **[Launch the app](https://stewalexander
 2. Enter a **city or ZIP**, tap **Find**, and choose your place. Or tap **Use device location** and allow access.
 3. Read the temperature, dew point, humidity, and heat index or wind chill when applicable.
 
+After device location loads weather successfully, its button becomes **Refresh**. Tap it to request an updated location and weather reading.
+
 Your selected city is remembered when browser storage is available. Weather updates every 15 minutes while the page is visible, and when you return to it or reconnect. Fresh weather requires internet access; cached readings are labeled.
 
 ### Desktop, Facebook, and home screens
@@ -42,7 +44,7 @@ This repository contains the running app. GitHub Pages publishes `docs/` from `m
 - `docs/app.js` — location selection, weather, and refresh behavior.
 - `docs/styles.css` — responsive presentation.
 - `docs/manifest.webmanifest` and icons — home-screen metadata.
-- `tests/location-flow.test.mjs` — 22 regression scenarios.
+- `tests/location-flow.test.mjs` — 23 regression scenarios.
 
 To preview a checkout locally:
 

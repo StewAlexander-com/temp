@@ -439,6 +439,7 @@
     displayFailed = false;
     currentWeather = weather;
     currentReadingState = state;
+    elements.useDevice.textContent = !selectedPlace && weather.usedDeviceLocation ? 'Refresh' : 'Use device location';
 
     renderFreshness(weather, state);
     const locationNote = weather.usedApproximateLocation
@@ -616,6 +617,7 @@
       elements.meta.textContent = 'Loading weather…';
       const weather = await loadWeather(coordinates);
       if (id !== requestId) return;
+      weather.usedDeviceLocation = !selectedPlace && !coordinates.cached;
       renderReading(weather, 'live');
       writeCache(STORAGE.weather, weather);
       void updateAlerts(coordinates, id);
@@ -637,6 +639,7 @@
     ++requestId; // Late device and weather responses must not overwrite a new choice.
     busy = false;
     selectedPlace = place;
+    elements.useDevice.textContent = 'Use device location';
     writeCache(STORAGE.place, place || {});
     hideExpiredAlert();
     lastAlertLookupAt = 0;
@@ -692,7 +695,10 @@
         elements.placeStatus.textContent = `Selected: ${savedPlace.label}`;
       }
       elements.placeForm.addEventListener('submit', searchPlaces);
-      elements.useDevice.addEventListener('click', () => changePlace(null));
+      elements.useDevice.addEventListener('click', () => {
+        if (!selectedPlace && hasReading) return updateWeather();
+        return changePlace(null);
+      });
       const cachedWeather = readCache(STORAGE.weather, WEATHER_CACHE_MS);
       if (validReading(cachedWeather)) renderReading(cachedWeather, 'cached');
 

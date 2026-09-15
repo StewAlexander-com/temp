@@ -310,4 +310,16 @@ for (const geolocation of ['denied', 'throw', 'invalid']) {
   app.latePosition(); await pending;
   assert.equal(app.elements.status.textContent, 'Failed');
 }
-console.log('location-flow V&V: 22 scenarios passed');
+{
+  const app = await boot();
+  await app.elements.useDevice.click();
+  assert.equal(app.elements.useDevice.textContent, 'Refresh');
+  const previous = app.geoCalls;
+  await app.elements.useDevice.click();
+  assert.equal(app.geoCalls, previous + 1, 'Refresh must request device location again');
+  assert.equal(app.elements.status.textContent, 'Observed');
+  assert.equal(app.elements.useDevice.textContent, 'Refresh');
+  await chooseCity(app);
+  assert.equal(app.elements.useDevice.textContent, 'Use device location', 'city mode must offer device location again');
+}
+console.log('location-flow V&V: 23 scenarios passed');
