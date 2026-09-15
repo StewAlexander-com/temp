@@ -62,3 +62,5 @@ See [the RCA and five hardening passes](HARDENING.md) for evidence and testing l
 ### Project history
 
 [Export notes](EXPORT-NOTES.md) describe the original version-27 export. `Temp-original-source-v27.zip` preserves that earlier server-backed implementation for reference; it is not required to use or run this app. Existing third-party license notices remain in that archive. No new project license is assigned here.
+
+See [sharing and home-screen review](SHARING-REVIEW.md) for the three-pass audit, five-why RCA, and platform verification limits.
