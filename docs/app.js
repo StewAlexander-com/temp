@@ -32,7 +32,6 @@
     humidity: document.getElementById('humidity'),
     lastUpdated: document.getElementById('lastUpdated'),
     meta: document.getElementById('meta'),
-    refresh: document.getElementById('refresh'),
     errorCard: document.getElementById('errorCard'),
     errorTitle: document.getElementById('errorTitle'),
     errorMessage: document.getElementById('errorMessage'),
@@ -440,7 +439,6 @@
     displayFailed = false;
     currentWeather = weather;
     currentReadingState = state;
-    elements.refresh.textContent = weather.usedApproximateLocation ? 'Try precise location' : 'Refresh now';
 
     renderFreshness(weather, state);
     const locationNote = weather.usedApproximateLocation
@@ -520,7 +518,6 @@
     elements.status.className = 'status loading';
     elements.status.textContent = selectedPlace || hasReading ? 'Updating' : 'Locating';
     elements.meta.textContent = selectedPlace ? `Loading weather for ${selectedPlace.label}…` : (hasReading ? 'Refreshing weather…' : 'Requesting device location…');
-    elements.refresh.disabled = true;
     elements.errorRetry.disabled = true;
   }
 
@@ -532,8 +529,6 @@
     elements.meta.textContent = hasReading
       ? 'Showing the last reading. Tap Use my location to update it.'
       : 'Use device location or choose a city / ZIP.';
-    elements.refresh.textContent = 'Use my location';
-    elements.refresh.disabled = false;
     elements.errorRetry.disabled = false;
   }
 
@@ -611,8 +606,8 @@
     const watchdog = window.setTimeout(() => {
       if (id !== requestId) return;
       ++requestId; busy = false;
+      elements.errorRetry.disabled = false;
       renderError(new WeatherError('weather', 'Weather took too long. Retry or choose another place.'));
-      elements.refresh.disabled = false; elements.errorRetry.disabled = false;
     }, 55000);
     try {
       const coordinates = selectedPlace || await getCoordinates();
@@ -633,7 +628,6 @@
       window.clearTimeout(watchdog);
       if (id === requestId) {
         busy = false;
-        elements.refresh.disabled = false;
         elements.errorRetry.disabled = false;
       }
     }
@@ -656,7 +650,7 @@
     elements.heatIndex.hidden = true;
     elements.lastUpdated.textContent = 'Waiting for weather…';
     writeCache(STORAGE.weather, {});
-    void updateWeather();
+    return updateWeather();
   }
 
   async function searchPlaces(event) {
@@ -704,7 +698,6 @@
 
       const cachedLocation = readCache(STORAGE.location, LOCATION_CACHE_MS);
 
-      elements.refresh.addEventListener('click', updateWeather);
       elements.errorRetry.addEventListener('click', updateWeather);
       window.addEventListener('online', () => {
         if (locationStarted) updateWeather();

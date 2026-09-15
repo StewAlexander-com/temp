@@ -130,7 +130,6 @@ async function boot({ permission = 'prompt', geolocation = 'success', cachedLoca
   const app = await boot({ permission: 'prompt' });
   assert.equal(app.geoCalls, 0, 'first visit must not trigger location before a user gesture');
   assert.equal(app.elements.status.textContent, 'Ready');
-  assert.equal(app.elements.refresh.textContent, 'Use my location');
 }
 
 {
@@ -152,7 +151,7 @@ async function boot({ permission = 'prompt', geolocation = 'success', cachedLoca
 
 {
   const app = await boot({ permission: 'prompt' });
-  await app.elements.refresh.click();
+  await app.elements.useDevice.click();
   await settle();
   assert.equal(app.geoCalls, 1, 'the location button should start a weather request');
   assert.equal(app.elements.status.textContent, 'Observed');
@@ -160,7 +159,7 @@ async function boot({ permission = 'prompt', geolocation = 'success', cachedLoca
 
 {
   const app = await boot({ permission: 'prompt', geolocation: 'denied' });
-  await app.elements.refresh.click();
+  await app.elements.useDevice.click();
   await settle();
   assert.equal(app.elements.errorTitle.textContent, 'Location blocked');
   await app.windowListeners.get('document:visibilitychange')?.();
@@ -183,7 +182,7 @@ async function boot({ permission = 'prompt', geolocation = 'success', cachedLoca
 
 {
   const app = await boot({ permission: 'prompt', geolocation: 'denied', policyAllows: false });
-  await app.elements.refresh.click();
+  await app.elements.useDevice.click();
   await settle();
   assert.equal(app.elements.errorTitle.textContent, 'Choose a place');
   assert.equal(app.elements.openBrowser.hidden, false);
@@ -242,10 +241,10 @@ async function chooseCity(app) {
 
 {
   const app = await boot({ geolocation: 'hang' });
-  const pending = app.elements.refresh.click();
+  const pending = app.elements.useDevice.click();
   app.timers.get(15000)();
   await pending;
-  assert.equal(app.elements.refresh.disabled, false, 'silent geolocation must release controls');
+  assert.equal(app.elements.errorRetry.disabled, false, 'silent geolocation must release controls');
   assert.match(app.elements.errorMessage.textContent, /too long/);
   app.latePosition(); await settle();
   assert.equal(app.elements.status.textContent, 'Failed', 'late callback cannot revive timed-out request');
@@ -254,7 +253,7 @@ async function chooseCity(app) {
 }
 {
   const app = await boot({ geolocation: 'hang' });
-  const pending = app.elements.refresh.click();
+  const pending = app.elements.useDevice.click();
   await chooseCity(app);
   assert.equal(app.elements.status.textContent, 'Observed', 'manual choice works while GPS hangs');
   app.latePosition(); await pending; await settle();
@@ -262,8 +261,8 @@ async function chooseCity(app) {
 }
 for (const geolocation of ['denied', 'throw', 'invalid']) {
   const app = await boot({ geolocation, storageBlocked: true });
-  await app.elements.refresh.click();
-  assert.equal(app.elements.refresh.disabled, false);
+  await app.elements.useDevice.click();
+  assert.equal(app.elements.errorRetry.disabled, false);
   await chooseCity(app);
   assert.equal(app.elements.status.textContent, 'Observed', 'manual path survives location and storage errors');
 }
@@ -271,7 +270,8 @@ for (const geolocation of ['denied', 'throw', 'invalid']) {
   const app = await boot({ permission: 'denied', savedPlace: { latitude: 35.23, longitude: -80.84, label: 'Charlotte' } });
   assert.equal(app.geoCalls, 0, 'saved city must not request geolocation');
   assert.equal(app.elements.status.textContent, 'Observed');
-  await app.elements.refresh.click();
+  await app.windowListeners.get('online')();
+  await settle();
   assert.equal(app.geoCalls, 0, 'refresh uses selected city');
 }
 {
@@ -289,7 +289,7 @@ for (const geolocation of ['denied', 'throw', 'invalid']) {
 }
 {
   const app = await boot({ missingGeo: true, missingPermissions: true });
-  await app.elements.refresh.click();
+  await app.elements.useDevice.click();
   assert.match(app.elements.errorMessage.textContent, /unavailable/);
   await chooseCity(app);
   assert.equal(app.elements.status.textContent, 'Observed');
@@ -303,9 +303,9 @@ for (const geolocation of ['denied', 'throw', 'invalid']) {
 }
 {
   const app = await boot({ geolocation: 'hang', hangWeather: true });
-  const pending = app.elements.refresh.click();
+  const pending = app.elements.useDevice.click();
   app.timers.get(55000)();
-  assert.equal(app.elements.refresh.disabled, false, 'overall watchdog releases UI');
+  assert.equal(app.elements.errorRetry.disabled, false, 'overall watchdog releases UI');
   assert.match(app.elements.errorMessage.textContent, /too long/);
   app.latePosition(); await pending;
   assert.equal(app.elements.status.textContent, 'Failed');

@@ -1,103 +1,64 @@
 # Temp°
 
-A large, readable local weather poster, packaged for your computer and GitHub.
-Exported September 15, 2026 from Temp° version 27.
+## [Open Temp° — live weather](https://stewalexander-com.github.io/temp/)
 
-## Location recovery update
+[![Temp° showing a weather reading and city selection](docs/hero.png)](https://stewalexander-com.github.io/temp/)
 
-If device location is blocked in a desktop viewer, Facebook, or a home-screen app, enter a city or ZIP and select the matching place. It is remembered when browser storage is available. Use device location remains optional. NWS failures can fall back to a clearly labeled Open-Meteo model estimate. See [the RCA, five hardening passes, and verification limits](HARDENING.md).
+Your local weather, large and readable. **[Launch the app](https://stewalexander-com.github.io/temp/)** — no download, account, or setup required.
 
-## Start here
+*The image is an actual app screenshot for Charlotte, NC, not a live weather reading.*
 
-Unzip this bundle. The `docs` folder is the ready-to-publish website: no Node.js,
-package installation, API key, or build step is needed to host it.
+## Use Temp
 
-| Included | Purpose |
-| --- | --- |
-| `docs/` | Editable HTML, CSS, JavaScript, and home-screen icons for GitHub Pages. |
-| `Temp-original-source-v27.zip` | Complete original tracked source, including server routes, artwork, dependency lockfile, and existing tests. |
-| `tests/location-flow.test.mjs` | Behavior checks adapted for the GitHub Pages edition. |
-| `EXPORT-NOTES.md` | Provenance, compatibility changes, and verification results. |
+1. Open **[stewalexander-com.github.io/temp](https://stewalexander-com.github.io/temp/)**.
+2. Enter a **city or ZIP**, tap **Find**, and choose your place. Or tap **Use device location** and allow access.
+3. Read the temperature, dew point, humidity, and heat index or wind chill when applicable.
 
-## Publish as a separate GitHub Pages project
+Your selected city is remembered when browser storage is available. Weather updates every 15 minutes while the page is visible, and when you return to it or reconnect. Fresh weather requires internet access; cached readings are labeled.
 
-1. Create a repository in your GitHub account, for example `temp`.
-2. Upload the **contents of this unzipped Temp folder** to the repository's `main`
-   branch. Keep `docs` as a folder directly inside the repository; do not upload
-   only the outer ZIP or add another enclosing `Temp` folder.
-3. In the repository, open **Settings → Pages**. Under **Build and deployment**,
-   choose **Deploy from a branch**, select **main**, choose **/docs**, and save.
-4. Once deployment finishes, open the HTTPS address shown by GitHub Pages.
-   With the example repository name, the expected address is
-   `https://StewAlexander-com.github.io/temp/`.
-5. Tap **Use my location** and allow location access. You can then add the page
-   to your home screen; the supplied name is **Temp°**.
+### Desktop, Facebook, and home screens
 
-Reference: [GitHub's publishing-source instructions](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site).
+City selection works without device-location permission. If an embedded viewer blocks location, use the city search or open the page in your regular browser through the viewer's menu.
 
-## Add to your existing GitHub website
+For a home-screen shortcut, open the live app in Safari on iPhone or your browser on Android and use its **Add to Home Screen** option where available. Separate browsers and home-screen apps may require choosing your city or granting location permission again.
 
-Copy the **contents of `docs`** into a new `temp` directory inside your existing
-website's published folder. For a site published from the repository root, that
-means `temp/index.html`; for a site published from `docs`, use
-`docs/temp/index.html`. Keep the accompanying icons and files together.
-Use the trailing-slash address, such as `https://StewAlexander-com.github.io/temp/`.
-An existing custom build must copy these static files into its published output.
+## What you see
 
-## Run on your computer
+- Large Fahrenheit temperature with a temperature-dependent background.
+- Dew point and humidity; heat index or wind chill when applicable.
+- Observation or forecast timestamps and clearly labeled older readings.
+- Active NWS warnings when available. Alert lookup is supplemental and is not a comprehensive emergency notification service.
+- A labeled Open-Meteo model estimate if NWS weather cannot be retrieved.
 
-With Python 3 installed, open a terminal in this unzipped Temp folder:
+## Data and privacy
+
+City/ZIP searches go to [Open-Meteo](https://open-meteo.com/) using GeoNames place data. Weather coordinates go to the National Weather Service, with Open-Meteo as a fallback. The app saves your selected place and recent readings in this browser's local storage when available.
+
+## Development
+
+This repository contains the running app. GitHub Pages publishes `docs/` from `main`; there is no application build step.
+
+- `docs/index.html` — interface and metadata.
+- `docs/app.js` — location selection, weather, and refresh behavior.
+- `docs/styles.css` — responsive presentation.
+- `docs/manifest.webmanifest` and icons — home-screen metadata.
+- `tests/location-flow.test.mjs` — 22 regression scenarios.
+
+To preview a checkout locally:
 
 ```sh
 python3 -m http.server 8000 --bind 127.0.0.1 --directory docs
 ```
 
-On Windows, use `py -m http.server 8000 --bind 127.0.0.1 --directory docs`.
-Open `http://localhost:8000/` and allow location when requested.
-Use this local server instead of double-clicking `index.html`. Phone testing
-should use the published HTTPS site. Internet access is required for fresh weather.
-
-## What the Pages edition preserves
-
-- Large Fahrenheit temperature, dew point and humidity, plus conditional heat
-  index or wind chill and active NWS warning display.
-- The sky gradient, diffuse thermal halo, responsive layout, and Temp° icons.
-- Device location, recent saved-location fallback, cached last reading,
-  timestamps, visible errors, and retry controls.
-- Automatic updates every 15 minutes after location use begins, and on return
-  to the page. Browsers may suspend timers when the page is in the background.
-
-## Server-dependent differences
-
-GitHub Pages hosts static files. This edition therefore omits the IP-based
-approximate-location fallback and shared live-temperature social-preview image.
-It does not call the old site's server. Location denial offers city/ZIP selection,
-or uses a recent location saved on the device when one exists. Social metadata
-has a fixed description and no dynamic weather image.
-
-Both server features remain intact in `Temp-original-source-v27.zip` for a future
-server-backed deployment. That source uses Vinext/React and Cloudflare Workers,
-with an R2 `BUCKET` binding. It is an archival source export, not a drop-in GitHub
-Pages application; deployment elsewhere requires configuring that runtime and
-storage and changing the original hard-coded site origin. Dependencies and
-remote stored data are not bundled. Source runtime versions are recorded in
-`package.json` and `pnpm-lock.yaml`.
-
-## Data and editing
-
-The client requests weather from `api.weather.gov`, with Open-Meteo model data as a fallback. City/ZIP searches go to Open-Meteo (GeoNames place data); weather coordinates go to the weather providers. Selected places and recent readings are saved in this browser's local storage.
-No private location history or server bucket contents are included in this ZIP.
-Weather availability depends on NWS coverage and service availability.
-
-Edit `docs/index.html` for markup, `docs/styles.css` for appearance, and
-`docs/app.js` for behavior. All local asset and installation paths are relative,
-so the site can live at a domain root or inside a repository/subfolder.
-
-Optional regression check (Node.js installed):
+Open **http://localhost:8000/**. To run the checks with Node.js:
 
 ```sh
+node --check docs/app.js
 node tests/location-flow.test.mjs
 ```
 
-The bundle does not assign a new license to your project. The original source
-retains its included third-party license notice.
+See [the RCA and five hardening passes](HARDENING.md) for evidence and testing limits. Desktop browser weather retrieval and responsive rendering were checked; physical Facebook/iPhone and installed home-screen behavior have not been directly verified.
+
+### Project history
+
+[Export notes](EXPORT-NOTES.md) describe the original version-27 export. `Temp-original-source-v27.zip` preserves that earlier server-backed implementation for reference; it is not required to use or run this app. Existing third-party license notices remain in that archive. No new project license is assigned here.

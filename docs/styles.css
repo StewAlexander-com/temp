@@ -367,3 +367,5 @@ body.degraded .error-card h1 { font-size: clamp(1.4rem, 5vw, 2rem); }
 .place-picker details { margin-top: .75rem; }
 .place-picker a { color: inherit; }
 :focus-visible { outline: 3px solid #005bbb; outline-offset: 3px; }
+
+footer { display: block; }
