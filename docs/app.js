@@ -2,18 +2,25 @@
   'use strict';
 
   const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
-  const FETCH_TIMEOUT_MS = 12 * 1000;
+  const FETCH_TIMEOUT_MS = 6 * 1000;
   const LOCATION_TIMEOUT_MS = 15 * 1000;
   const LOCATION_CACHE_MS = 24 * 60 * 60 * 1000;
   const WEATHER_CACHE_MS = 6 * 60 * 60 * 1000;
   const OBSERVATION_STALE_MS = 45 * 60 * 1000;
   const ALERT_TIMEOUT_MS = 5 * 1000;
   const STORAGE = {
+    place: 'local-weather:selected-place:v1',
     location: 'local-weather:last-location:v2',
     weather: 'local-weather:last-reading:v2'
   };
 
   const elements = {
+    placeForm: document.getElementById('placeForm'),
+    placeQuery: document.getElementById('placeQuery'),
+    placeSearch: document.getElementById('placeSearch'),
+    placeResults: document.getElementById('placeResults'),
+    placeStatus: document.getElementById('placeStatus'),
+    useDevice: document.getElementById('useDevice'),
     status: document.getElementById('status'),
     weatherAlert: document.getElementById('weatherAlert'),
     alertTitle: document.getElementById('alertTitle'),
@@ -34,6 +41,9 @@
     openBrowser: document.getElementById('openBrowser')
   };
 
+  let selectedPlace = null;
+  let requestId = 0;
+  let searchId = 0;
   let busy = false;
   let hasReading = false;
   let locationStarted = false;
@@ -55,7 +65,7 @@
 
   function geolocationPolicyBlocked() {
     const policy = document.permissionsPolicy || document.featurePolicy;
-    return Boolean(policy && typeof policy.allowsFeature === 'function' && !policy.allowsFeature('geolocation'));
+    try { return Boolean(policy && typeof policy.allowsFeature === 'function' && !policy.allowsFeature('geolocation')); } catch (_) { return false; }
   }
 
   async function getLocationPermission() {
@@ -74,14 +84,13 @@
   function verifyRuntime() {
     const missing = Object.entries(elements).filter(([, value]) => !value).map(([key]) => key);
     if (missing.length) throw new WeatherError('startup', `The page is missing required controls: ${missing.join(', ')}.`);
-    if (!window.isSecureContext) throw new WeatherError('location', 'Phone location requires a secure HTTPS connection.');
     if (!('fetch' in window)) throw new WeatherError('startup', 'This browser cannot request weather data.');
   }
 
   function readCache(key, maxAge) {
     try {
       const value = JSON.parse(localStorage.getItem(key));
-      if (!value || !Number.isFinite(value.savedAt) || Date.now() - value.savedAt > maxAge) return null;
+      if (!value || !Number.isFinite(value.savedAt) || Date.now() - value.savedAt > maxAge || value.savedAt > Date.now() + 60000) return null;
       return value;
     } catch (_) {
       return null;
@@ -97,28 +106,44 @@
   }
 
   // HARDENING PASS 2: request fresh phone location, then safely use a recent last-known position.
+  function validCoordinates(value) {
+    return value && Number.isFinite(value.latitude) && Math.abs(value.latitude) <= 90
+      && Number.isFinite(value.longitude) && Math.abs(value.longitude) <= 180;
+  }
+
   function requestPosition() {
     return new Promise((resolve, reject) => {
-      if (!('geolocation' in navigator)) {
-        reject(new WeatherError('location', 'Phone location is unavailable in this browser.'));
+      if (!window.isSecureContext || geolocationPolicyBlocked()) {
+        reject(new WeatherError('location', 'This viewer blocks device location.', null, 'policy'));
         return;
       }
-
-      navigator.geolocation.getCurrentPosition(
-        resolve,
-        error => {
-          const messages = {
-            1: 'Location permission was denied.',
-            2: 'The phone could not determine its position.',
-            3: 'The phone location request timed out.'
-          };
-          const kind = error.code === 1
-            ? (geolocationPolicyBlocked() ? 'policy' : 'denied')
-            : 'unavailable';
-          reject(new WeatherError('location', messages[error.code] || 'Phone location failed.', error, kind));
-        },
-        { enableHighAccuracy: false, timeout: LOCATION_TIMEOUT_MS, maximumAge: 5 * 60 * 1000 }
-      );
+      if (!navigator.geolocation || typeof navigator.geolocation.getCurrentPosition !== 'function') {
+        reject(new WeatherError('location', 'Device location is unavailable. Choose a city or ZIP below.', null, 'unavailable'));
+        return;
+      }
+      let settled = false;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        callback(value);
+      };
+      // Some embedded viewers never invoke either callback, even with a native timeout.
+      const timer = window.setTimeout(() => finish(reject,
+        new WeatherError('location', 'Location took too long. Choose a city or ZIP below.', null, 'timeout')),
+        LOCATION_TIMEOUT_MS);
+      try {
+        navigator.geolocation.getCurrentPosition(position => {
+          if (!validCoordinates(position && position.coords)) {
+            finish(reject, new WeatherError('location', 'The device returned an invalid location.', null, 'unavailable'));
+          } else finish(resolve, position);
+        }, error => finish(reject, new WeatherError('location',
+          error.code === 1 ? 'Location permission was denied.' : 'The device could not determine its location. Choose a city or ZIP below.',
+          error, error.code === 1 ? 'denied' : 'unavailable')),
+          { enableHighAccuracy: false, timeout: LOCATION_TIMEOUT_MS, maximumAge: 5 * 60 * 1000 });
+      } catch (error) {
+        finish(reject, new WeatherError('location', 'This viewer could not request location. Choose a city or ZIP below.', error, 'unavailable'));
+      }
     });
   }
 
@@ -135,7 +160,7 @@
       return result;
     } catch (error) {
       const cached = readCache(STORAGE.location, LOCATION_CACHE_MS);
-      if (cached && Number.isFinite(cached.latitude) && Number.isFinite(cached.longitude)) {
+      if (validCoordinates(cached)) {
         return { ...cached, cached: true, locationError: error };
       }
       // GitHub Pages has no server-side IP geolocation endpoint.
@@ -144,27 +169,38 @@
   }
 
   // HARDENING PASS 3: bound every NWS request and retry temporary failures once.
-  async function fetchJson(url, stage) {
+  async function fetchJson(url, stage, parentSignal) {
     let lastError;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
+      if (parentSignal && parentSignal.aborted) throw new WeatherError(stage, 'Weather request timed out.');
       const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      const abort = () => controller.abort();
+      if (parentSignal) parentSignal.addEventListener('abort', abort, { once: true });
+      let timeout;
+      const timedOut = new Promise((_, reject) => {
+        timeout = window.setTimeout(() => { controller.abort(); reject(new Error('Request timed out')); }, FETCH_TIMEOUT_MS);
+      });
       try {
+        return await Promise.race([timedOut, (async () => {
         const response = await fetch(url, {
           cache: 'no-store',
           signal: controller.signal,
           headers: { Accept: 'application/geo+json, application/json' }
         });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) { const error = new Error(`HTTP ${response.status}`); error.status = response.status; throw error; }
         return await response.json();
+        })()]);
       } catch (error) {
         lastError = error;
+        if (parentSignal && parentSignal.aborted) break;
+        if (error.status >= 400 && error.status < 500 && error.status !== 429) break;
         if (attempt < 2) await new Promise(resolve => window.setTimeout(resolve, 450));
       } finally {
         window.clearTimeout(timeout);
+        if (parentSignal) parentSignal.removeEventListener('abort', abort);
       }
     }
-    throw new WeatherError(stage, 'The National Weather Service did not respond successfully.', lastError);
+    throw new WeatherError(stage, 'The weather service did not respond. Check your connection and retry.', lastError);
   }
 
   function toFahrenheit(quantity) {
@@ -237,14 +273,14 @@
     return 35.74 + (0.6215 * temperatureF) - (35.75 * windFactor) + (0.4275 * temperatureF * windFactor);
   }
 
-  async function readStationObservation(stationsUrl) {
-    const stations = await fetchJson(stationsUrl, 'stations');
-    const candidates = (stations.features || []).slice(0, 5);
+  async function readStationObservation(stationsUrl, signal) {
+    const stations = await fetchJson(stationsUrl, 'stations', signal);
+    const candidates = (stations.features || []).slice(0, 2);
     for (const station of candidates) {
       const stationUrl = station && (station.id || (station.properties && station.properties['@id']));
       if (!stationUrl) continue;
       try {
-        const observation = await fetchJson(`${stationUrl.replace(/\/$/, '')}/observations/latest`, 'observation');
+        const observation = await fetchJson(`${stationUrl.replace(/\/$/, '')}/observations/latest`, 'observation', signal);
         const properties = observation && observation.properties;
         const reading = {
           temperature: toFahrenheit(properties && properties.temperature),
@@ -263,12 +299,12 @@
     throw new WeatherError('observation', 'Nearby NWS stations did not provide both temperature and dew point.');
   }
 
-  async function readHourlyForecast(forecastUrl) {
+  async function readHourlyForecast(forecastUrl, signal) {
     const joiner = forecastUrl.includes('?') ? '&' : '?';
-    const forecast = await fetchJson(`${forecastUrl}${joiner}units=us`, 'forecast');
+    const forecast = await fetchJson(`${forecastUrl}${joiner}units=us`, 'forecast', signal);
     const period = forecast && forecast.properties && forecast.properties.periods && forecast.properties.periods[0];
     const reading = {
-      temperature: period && Number(period.temperature),
+      temperature: period && period.temperature,
       dewpoint: toFahrenheit(period && period.dewpoint),
       sourceTime: period && period.startTime,
       sourceKind: 'forecast',
@@ -279,10 +315,10 @@
   }
 
   // HARDENING PASS 4: try several observations, then an independent hourly forecast path.
-  async function loadNwsWeather(coordinates) {
+  async function loadNwsWeather(coordinates, signal) {
     const latitude = coordinates.latitude.toFixed(4);
     const longitude = coordinates.longitude.toFixed(4);
-    const point = await fetchJson(`https://api.weather.gov/points/${latitude},${longitude}`, 'location lookup');
+    const point = await fetchJson(`https://api.weather.gov/points/${latitude},${longitude}`, 'location lookup', signal);
     const properties = point && point.properties;
     if (!properties) throw new WeatherError('location lookup', 'The NWS did not recognize this location.');
 
@@ -294,15 +330,15 @@
     let reading;
     try {
       if (!properties.observationStations) throw new Error('No station endpoint.');
-      reading = await readStationObservation(properties.observationStations);
+      reading = await readStationObservation(properties.observationStations, signal);
     } catch (_) {
       if (!properties.forecastHourly) throw new WeatherError('forecast', 'No NWS observation or hourly forecast is available here.');
-      reading = await readHourlyForecast(properties.forecastHourly);
+      reading = await readHourlyForecast(properties.forecastHourly, signal);
     }
 
     return {
       ...reading,
-      location,
+      location: coordinates.label || location,
       usedCachedLocation: coordinates.cached,
       usedApproximateLocation: coordinates.approximate,
       fetchedAt: Date.now()
@@ -341,12 +377,12 @@
 
   function renderFreshness(weather, state) {
     const sourceTimestamp = validTimestamp(weather.sourceTime) ?? validTimestamp(weather.fetchedAt);
-    const sourceKind = weather.sourceKind === 'forecast' ? 'forecast' : 'observation';
+    const sourceKind = weather.sourceKind === 'forecast' || weather.sourceKind === 'model' ? 'forecast' : 'observation';
     const stale = state === 'cached' || (sourceTimestamp !== null && Date.now() - sourceTimestamp > OBSERVATION_STALE_MS);
 
     if (sourceKind === 'forecast') {
       elements.status.className = `status ${stale ? 'stale' : ''}`.trim();
-      elements.status.textContent = 'Forecast';
+      elements.status.textContent = weather.sourceKind === 'model' ? 'Estimate' : 'Forecast';
       elements.lastUpdated.textContent = `Forecast for ${formatSuccessfulUpdate(sourceTimestamp ?? weather.fetchedAt)} · received ${formatSuccessfulUpdate(weather.fetchedAt)}`;
     } else {
       elements.status.className = `status ${stale ? 'stale' : ''}`.trim();
@@ -409,7 +445,7 @@
     renderFreshness(weather, state);
     const locationNote = weather.usedApproximateLocation
       ? `approximate area near ${weather.location}`
-      : (weather.usedCachedLocation ? 'last phone location' : weather.location);
+      : (weather.usedCachedLocation ? `saved device location near ${weather.location}` : weather.location);
     elements.meta.textContent = `${locationNote} · ${weather.source}`;
   }
 
@@ -421,7 +457,7 @@
     alertExpiryTimer = null;
   }
 
-  async function updateAlerts(coordinates) {
+  async function updateAlerts(coordinates, id) {
     if (Date.now() - lastAlertLookupAt < 30 * 1000) return;
     lastAlertLookupAt = Date.now();
     const controller = new AbortController();
@@ -436,6 +472,7 @@
       });
       if (!response.ok) return;
       const payload = await response.json();
+      if (id !== requestId) return;
       const now = Date.now();
       const severityRank = { Extreme: 4, Severe: 3, Moderate: 2, Minor: 1, Unknown: 0 };
       const warnings = (payload.features || []).filter(feature => {
@@ -481,8 +518,8 @@
     hideError();
     elements.reading.setAttribute('aria-busy', 'true');
     elements.status.className = 'status loading';
-    elements.status.textContent = hasReading ? 'Updating' : 'Locating';
-    elements.meta.textContent = hasReading ? 'Refreshing from the National Weather Service…' : 'Requesting phone location…';
+    elements.status.textContent = selectedPlace || hasReading ? 'Updating' : 'Locating';
+    elements.meta.textContent = selectedPlace ? `Loading weather for ${selectedPlace.label}…` : (hasReading ? 'Refreshing weather…' : 'Requesting device location…');
     elements.refresh.disabled = true;
     elements.errorRetry.disabled = true;
   }
@@ -494,7 +531,7 @@
     elements.status.textContent = hasReading ? 'Last reading' : 'Ready';
     elements.meta.textContent = hasReading
       ? 'Showing the last reading. Tap Use my location to update it.'
-      : 'Tap Use my location to load weather for this phone.';
+      : 'Use device location or choose a city / ZIP.';
     elements.refresh.textContent = 'Use my location';
     elements.refresh.disabled = false;
     elements.errorRetry.disabled = false;
@@ -506,24 +543,24 @@
     const permissionDenied = error && error.stage === 'location' && error.kind === 'denied';
     if (policyBlocked) {
       return {
-        title: 'Open in browser',
-        message: 'This in-app viewer blocks phone location. Open the weather poster in your browser, then tap Use my location.',
-        detail: 'Your browser will ask before sharing your position.',
+        title: 'Choose a place',
+        message: 'This viewer blocks device location. Choose a city or ZIP below to get weather here.',
+        detail: 'For device location in Facebook, use its menu to open in Safari. On desktop, copy this page address into your browser. A new tab may stay inside the same app.',
         showOpenBrowser: true
       };
     }
     if (permissionDenied) {
       return {
         title: 'Location blocked',
-        message: 'Allow Location for this site in your browser settings, then tap Retry now. In Safari, use the page menu beside the address and open website settings.',
-        detail: 'This edition uses phone location or a recent location saved on this device.',
+        message: 'Choose a city or ZIP below, or allow this site to use location in your browser and device settings.',
+        detail: 'In Facebook, use its menu to open in Safari for device location. City search works without location permission.',
         showOpenBrowser: false
       };
     }
     return {
       title: 'Weather unavailable',
       message: (error && error.message) || 'The location or weather request failed.',
-      detail: `Stage: ${stage} · Automatic retry remains scheduled every 15 minutes.`
+      detail: `Stage: ${stage}. Choose a place below or retry when your connection is available.`
     };
   }
 
@@ -544,33 +581,124 @@
     elements.meta.textContent = hasReading ? 'Showing the last successful reading.' : 'No usable weather reading is available.';
   }
 
+  async function loadWeather(coordinates) {
+    const controller = new AbortController();
+    const deadline = window.setTimeout(() => controller.abort(), 18000);
+    try { return await loadNwsWeather(coordinates, controller.signal); }
+    catch (_) {
+      const data = await fetchJson(`https://api.open-meteo.com/v1/forecast?latitude=${coordinates.latitude.toFixed(4)}&longitude=${coordinates.longitude.toFixed(4)}&current=temperature_2m,dew_point_2m,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&timeformat=unixtime`, 'weather fallback');
+      const current = data.current;
+      const weather = {
+        temperature: current && current.temperature_2m,
+        dewpoint: current && current.dew_point_2m,
+        windSpeed: current && current.wind_speed_10m,
+        sourceTime: current && Number.isFinite(current.time) ? new Date(current.time * 1000).toISOString() : null,
+        sourceKind: 'model', source: 'Open-Meteo model estimate',
+        location: coordinates.label || `${coordinates.latitude.toFixed(2)}, ${coordinates.longitude.toFixed(2)}`,
+        usedCachedLocation: coordinates.cached, fetchedAt: Date.now()
+      };
+      if (!validReading(weather) || !weather.sourceTime) throw new WeatherError('weather fallback', 'No usable weather is available for this place.');
+      return weather;
+    } finally { window.clearTimeout(deadline); }
+  }
+
   async function updateWeather() {
     if (busy) return;
+    const id = ++requestId;
     locationStarted = true;
     busy = true;
     renderLoading();
+    const watchdog = window.setTimeout(() => {
+      if (id !== requestId) return;
+      ++requestId; busy = false;
+      renderError(new WeatherError('weather', 'Weather took too long. Retry or choose another place.'));
+      elements.refresh.disabled = false; elements.errorRetry.disabled = false;
+    }, 55000);
     try {
-      const coordinates = await getCoordinates();
-      const weather = await loadNwsWeather(coordinates);
+      const coordinates = selectedPlace || await getCoordinates();
+      if (id !== requestId) return;
+      elements.status.textContent = 'Updating';
+      elements.meta.textContent = 'Loading weather…';
+      const weather = await loadWeather(coordinates);
+      if (id !== requestId) return;
       renderReading(weather, 'live');
       writeCache(STORAGE.weather, weather);
-      void updateAlerts(coordinates);
+      void updateAlerts(coordinates, id);
       hideError();
     } catch (error) {
-      if (error && error.stage === 'location' && (error.kind === 'denied' || error.kind === 'policy')) {
-        locationStarted = false;
-      }
+      if (id !== requestId) return;
+      if (error && error.stage === 'location') locationStarted = false;
       renderError(error);
     } finally {
-      busy = false;
-      elements.refresh.disabled = false;
-      elements.errorRetry.disabled = false;
+      window.clearTimeout(watchdog);
+      if (id === requestId) {
+        busy = false;
+        elements.refresh.disabled = false;
+        elements.errorRetry.disabled = false;
+      }
     }
+  }
+
+  function changePlace(place) {
+    ++requestId; // Late device and weather responses must not overwrite a new choice.
+    busy = false;
+    selectedPlace = place;
+    writeCache(STORAGE.place, place || {});
+    hideExpiredAlert();
+    lastAlertLookupAt = 0;
+    // Do not show a previous city's reading while the selected place is loading.
+    hasReading = false;
+    currentWeather = null;
+    elements.temperature.innerHTML = '--<span class="unit">°F</span>';
+    elements.temperature.setAttribute('aria-label', 'Temperature loading');
+    elements.dewpoint.textContent = '--°F';
+    elements.humidity.textContent = '--%';
+    elements.heatIndex.hidden = true;
+    elements.lastUpdated.textContent = 'Waiting for weather…';
+    writeCache(STORAGE.weather, {});
+    void updateWeather();
+  }
+
+  async function searchPlaces(event) {
+    event.preventDefault();
+    const query = elements.placeQuery.value.trim();
+    const id = ++searchId;
+    elements.placeResults.replaceChildren();
+    if (query.length < 2) { elements.placeStatus.textContent = 'Enter at least two characters or a ZIP code.'; return; }
+    elements.placeSearch.disabled = true;
+    elements.placeStatus.textContent = 'Finding places…';
+    try {
+      const data = await fetchJson(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=6&language=en&format=json`, 'city search');
+      if (id !== searchId) return;
+      const places = (data.results || []).filter(validCoordinates);
+      elements.placeStatus.textContent = places.length ? 'Choose your place:' : 'No matches. Try a nearby city, or add the state or country.';
+      places.forEach(place => {
+        const label = [place.name, place.admin1, place.country].filter(Boolean).join(', ');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.addEventListener('click', () => {
+          elements.placeResults.replaceChildren();
+          elements.placeStatus.textContent = `Selected: ${label}`;
+          changePlace({ latitude: place.latitude, longitude: place.longitude, label });
+        });
+        elements.placeResults.appendChild(button);
+      });
+    } catch (_) {
+      if (id === searchId) elements.placeStatus.textContent = 'City search is unavailable. Check your connection and try again.';
+    } finally { if (id === searchId) elements.placeSearch.disabled = false; }
   }
 
   async function start() {
     try {
       verifyRuntime();
+      const savedPlace = readCache(STORAGE.place, 365 * 24 * 60 * 60 * 1000);
+      if (validCoordinates(savedPlace) && typeof savedPlace.label === 'string') {
+        selectedPlace = savedPlace;
+        elements.placeStatus.textContent = `Selected: ${savedPlace.label}`;
+      }
+      elements.placeForm.addEventListener('submit', searchPlaces);
+      elements.useDevice.addEventListener('click', () => changePlace(null));
       const cachedWeather = readCache(STORAGE.weather, WEATHER_CACHE_MS);
       if (validReading(cachedWeather)) renderReading(cachedWeather, 'cached');
 
@@ -588,10 +716,10 @@
       const permission = await getLocationPermission();
       if (permission) {
         const handlePermissionChange = () => {
-          if (permission.state === 'granted' && !locationStarted) {
+          if (permission.state === 'granted' && !locationStarted && !selectedPlace) {
             locationStarted = true;
             updateWeather();
-          } else if (permission.state === 'denied' && !hasReading) {
+          } else if (permission.state === 'denied' && !hasReading && !selectedPlace) {
             locationStarted = false;
             renderError(new WeatherError('location', 'Location permission was denied.', { code: 1 }, 'denied'));
           }
@@ -603,7 +731,7 @@
         }
       }
 
-      if (cachedLocation || (permission && permission.state === 'granted')) {
+      if (selectedPlace || cachedLocation || (permission && permission.state === 'granted')) {
         locationStarted = true;
         updateWeather();
       } else if (permission && permission.state === 'denied') {
@@ -613,7 +741,7 @@
         renderReady();
       }
       window.setInterval(() => {
-        if (locationStarted) updateWeather();
+        if (locationStarted && document.visibilityState === 'visible') updateWeather();
       }, REFRESH_INTERVAL_MS);
       window.setInterval(() => {
         if (currentWeather && !busy && !displayFailed) renderFreshness(currentWeather, currentReadingState);

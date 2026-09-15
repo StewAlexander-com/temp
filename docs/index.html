@@ -17,8 +17,8 @@
   <link rel="icon" href="./icons/weather-192.png" type="image/png" sizes="192x192">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png" sizes="180x180">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./styles.css">
-  <script src="./app.js" defer></script>
+  <link rel="stylesheet" href="./styles.css?v=2">
+  <script src="./app.js?v=2" defer></script>
 </head>
 <body>
       <div class="shell">
@@ -52,7 +52,7 @@
             <p id="errorDetail" class="error-detail"></p>
             <div class="error-actions">
               <button id="errorRetry" class="refresh inverted" type="button">Retry now</button>
-              <a id="openBrowser" class="refresh" href="./" target="_blank" rel="noopener noreferrer" hidden>Open in browser</a>
+              <a id="openBrowser" class="refresh" href="./" target="_blank" rel="noopener noreferrer" hidden>Open a new tab</a>
             </div>
           </section>
 
@@ -66,6 +66,23 @@
           </noscript>
         </main>
 
+        <section class="place-picker" aria-label="Choose weather location">
+          <form id="placeForm">
+            <label for="placeQuery">City or ZIP — no location permission needed</label>
+            <div class="place-inputs">
+              <input id="placeQuery" type="search" maxlength="100" placeholder="City, state or ZIP" autocomplete="off" required aria-describedby="placeStatus">
+              <button id="placeSearch" class="refresh" type="submit">Find</button>
+              <button id="useDevice" class="refresh" type="button">Use device location</button>
+            </div>
+          </form>
+          <p id="placeStatus" role="status" aria-live="polite"></p>
+          <div id="placeResults" class="place-results"></div>
+          <details><summary>Location help &amp; data</summary>
+            <p>In Facebook on iPhone, use the app menu to open this page in Safari if device location is blocked. Desktop viewers may also block location. You can always choose a city here when search is available.</p>
+            <p>Home-screen apps may need their own location permission. A chosen city is remembered in this browser when storage is available; choose it again if another browser or home-screen app starts empty.</p>
+            <p>City searches go to <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> (place data by GeoNames). Weather coordinates go to NWS, with Open-Meteo as a fallback. Estimates are labeled. Recent readings and your chosen place are stored on this device. Fresh weather requires internet access.</p>
+          </details>
+        </section>
         <footer>
           <p id="meta" class="meta">Your location is used only to request local weather from the National Weather Service.</p>
           <button id="refresh" class="refresh" type="button">Use my location</button>

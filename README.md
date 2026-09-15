@@ -3,6 +3,10 @@
 A large, readable local weather poster, packaged for your computer and GitHub.
 Exported September 15, 2026 from Temp° version 27.
 
+## Location recovery update
+
+If device location is blocked in a desktop viewer, Facebook, or a home-screen app, enter a city or ZIP and select the matching place. It is remembered when browser storage is available. Use device location remains optional. NWS failures can fall back to a clearly labeled Open-Meteo model estimate. See [the RCA, five hardening passes, and verification limits](HARDENING.md).
+
 ## Start here
 
 Unzip this bundle. The `docs` folder is the ready-to-publish website: no Node.js,
@@ -67,7 +71,7 @@ should use the published HTTPS site. Internet access is required for fresh weath
 
 GitHub Pages hosts static files. This edition therefore omits the IP-based
 approximate-location fallback and shared live-temperature social-preview image.
-It does not call the old site's server. Location denial produces a clear error,
+It does not call the old site's server. Location denial offers city/ZIP selection,
 or uses a recent location saved on the device when one exists. Social metadata
 has a fixed description and no dynamic weather image.
 
@@ -81,8 +85,7 @@ remote stored data are not bundled. Source runtime versions are recorded in
 
 ## Data and editing
 
-The client requests weather directly from `api.weather.gov`; it sends coordinates
-to NWS and saves recent coordinates/readings in this browser's local storage.
+The client requests weather from `api.weather.gov`, with Open-Meteo model data as a fallback. City/ZIP searches go to Open-Meteo (GeoNames place data); weather coordinates go to the weather providers. Selected places and recent readings are saved in this browser's local storage.
 No private location history or server bucket contents are included in this ZIP.
 Weather availability depends on NWS coverage and service availability.
 

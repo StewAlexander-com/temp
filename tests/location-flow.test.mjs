@@ -6,7 +6,8 @@ const source = fs.readFileSync(new URL('../docs/app.js', import.meta.url), 'utf8
 
 class Element {
   constructor(id) {
-    this.id = id;
+    this.id = id; this.children = []; this.value = '';
+
     this.hidden = id === 'heatIndex' || id === 'weatherAlert' || id === 'errorCard' || id === 'openBrowser';
     this.textContent = '';
     this.className = '';
@@ -25,12 +26,14 @@ class Element {
     this.attributes = new Map();
     this.listeners = new Map();
   }
+  replaceChildren() { this.children = []; }
+  appendChild(child) { this.children.push(child); }
   addEventListener(name, handler) { this.listeners.set(name, handler); }
   setAttribute(name, value) { this.attributes.set(name, value); }
   async click() { await this.listeners.get('click')?.(); }
 }
 
-const ids = ['status', 'weatherAlert', 'alertTitle', 'alertTime', 'reading', 'temperature', 'heatIndex', 'dewpoint', 'humidity', 'lastUpdated', 'meta', 'refresh', 'errorCard', 'errorTitle', 'errorMessage', 'errorDetail', 'errorRetry', 'openBrowser'];
+const ids = ['placeForm', 'placeQuery', 'placeSearch', 'placeResults', 'placeStatus', 'useDevice', 'status', 'weatherAlert', 'alertTitle', 'alertTime', 'reading', 'temperature', 'heatIndex', 'dewpoint', 'humidity', 'lastUpdated', 'meta', 'refresh', 'errorCard', 'errorTitle', 'errorMessage', 'errorDetail', 'errorRetry', 'openBrowser'];
 
 function weatherResponse(url, options) {
   const { approximateAvailable, stationProperties, alerts } = options;
@@ -45,15 +48,17 @@ async function settle() {
   for (let index = 0; index < 12; index += 1) await new Promise(resolve => setImmediate(resolve));
 }
 
-async function boot({ permission = 'prompt', geolocation = 'success', cachedLocation = false, policyAllows = true, approximateAvailable = false, stationProperties = null, alerts = [] } = {}) {
+async function boot({ permission = 'prompt', geolocation = 'success', cachedLocation = false, policyAllows = true, approximateAvailable = false, stationProperties = null, alerts = [], savedPlace = null, storageBlocked = false, failNws = false, hangWeather = false, missingGeo = false, missingPermissions = false, emptySearch = false } = {}) {
   const elements = Object.fromEntries(ids.map(id => [id, new Element(id)]));
   const storage = new Map();
   if (cachedLocation) storage.set('local-weather:last-location:v2', JSON.stringify({ latitude: 35, longitude: -80, accuracy: 20, savedAt: Date.now() }));
-  let geoCalls = 0;
+  if (savedPlace) storage.set('local-weather:selected-place:v1', JSON.stringify({ ...savedPlace, savedAt: Date.now() }));
+  let geoCalls = 0; let lateSuccess; const timers = new Map();
   const permissionListeners = [];
   const windowListeners = new Map();
   const unrefTimeout = (handler, delay) => {
     const timer = setTimeout(handler, delay);
+    timers.set(delay, handler);
     if (delay > 60 * 1000) timer.unref?.();
     return timer;
   };
@@ -71,14 +76,17 @@ async function boot({ permission = 'prompt', geolocation = 'success', cachedLoca
     AbortController,
     setImmediate,
     localStorage: {
-      getItem(key) { return storage.get(key) ?? null; },
-      setItem(key, value) { storage.set(key, value); }
+      getItem(key) { if (storageBlocked) throw new Error('blocked'); return storage.get(key) ?? null; },
+      setItem(key, value) { if (storageBlocked) throw new Error('blocked'); storage.set(key, value); }
     },
     navigator: {
       permissions: { query() { return permission === 'hang' ? new Promise(() => {}) : Promise.resolve(permissionStatus); } },
       geolocation: {
         getCurrentPosition(success, failure) {
           geoCalls += 1;
+          if (geolocation === 'hang') { lateSuccess = success; return; }
+          if (geolocation === 'throw') throw new Error('unsupported');
+          if (geolocation === 'invalid') { success({ coords: { latitude: NaN, longitude: 181 } }); return; }
           if (geolocation === 'success') success({ coords: { latitude: 35, longitude: -80, accuracy: 20 } });
           else failure({ code: 1 });
         }
@@ -87,11 +95,16 @@ async function boot({ permission = 'prompt', geolocation = 'success', cachedLoca
     document: {
       visibilityState: 'visible',
       permissionsPolicy: { allowsFeature() { return policyAllows; } },
+      createElement(tag) { return new Element(tag); },
       getElementById(id) { return elements[id]; },
       addEventListener(name, handler) { windowListeners.set(`document:${name}`, handler); },
       body: { classList: { add() {}, remove() {} } }
     },
     fetch: async url => {
+      if (String(url).includes('geocoding-api')) return { ok: true, json: async () => ({ results: emptySearch ? [] : [{ name: 'Charlotte', admin1: 'North Carolina', country: 'US', latitude: 35.23, longitude: -80.84 }] }) };
+      if (String(url).includes('api.open-meteo')) return { ok: true, json: async () => ({ current: { temperature_2m: 75, dew_point_2m: 60, wind_speed_10m: 5, time: Math.floor(Date.now()/1000) } }) };
+      if (hangWeather) return new Promise(() => {});
+      if (failNws) return { ok: false, status: 404 };
       const value = weatherResponse(String(url), { approximateAvailable, stationProperties, alerts });
       assert.ok(!String(url).startsWith('/'), 'static edition must not call a root-relative server endpoint');
       return { ok: true, status: 200, async json() { return value; } };
@@ -105,10 +118,12 @@ async function boot({ permission = 'prompt', geolocation = 'success', cachedLoca
       addEventListener(name, handler) { windowListeners.set(name, handler); }
     }
   };
+  if (missingGeo) delete context.navigator.geolocation;
+  if (missingPermissions) delete context.navigator.permissions;
   context.window.fetch = context.fetch;
   vm.runInNewContext(source, context);
   await settle();
-  return { elements, get geoCalls() { return geoCalls; }, permissionStatus, permissionListeners, windowListeners };
+  return { elements, storage, timers, latePosition: () => lateSuccess?.({ coords: { latitude: 35, longitude: -80 } }), get geoCalls() { return geoCalls; }, permissionStatus, permissionListeners, windowListeners };
 }
 
 {
@@ -170,7 +185,7 @@ async function boot({ permission = 'prompt', geolocation = 'success', cachedLoca
   const app = await boot({ permission: 'prompt', geolocation: 'denied', policyAllows: false });
   await app.elements.refresh.click();
   await settle();
-  assert.equal(app.elements.errorTitle.textContent, 'Open in browser');
+  assert.equal(app.elements.errorTitle.textContent, 'Choose a place');
   assert.equal(app.elements.openBrowser.hidden, false);
 }
 
@@ -217,4 +232,82 @@ async function boot({ permission = 'prompt', geolocation = 'success', cachedLoca
   assert.match(app.elements.alertTime.textContent, /^Until /);
 }
 
-console.log('location-flow V&V: 11 scenarios passed');
+async function chooseCity(app) {
+  app.elements.placeQuery.value = 'Charlotte';
+  await app.elements.placeForm.listeners.get('submit')({ preventDefault() {} });
+  assert.equal(app.elements.placeResults.children.length, 1);
+  await app.elements.placeResults.children[0].click();
+  await settle();
+}
+
+{
+  const app = await boot({ geolocation: 'hang' });
+  const pending = app.elements.refresh.click();
+  app.timers.get(15000)();
+  await pending;
+  assert.equal(app.elements.refresh.disabled, false, 'silent geolocation must release controls');
+  assert.match(app.elements.errorMessage.textContent, /too long/);
+  app.latePosition(); await settle();
+  assert.equal(app.elements.status.textContent, 'Failed', 'late callback cannot revive timed-out request');
+  await chooseCity(app);
+  assert.equal(app.elements.status.textContent, 'Observed');
+}
+{
+  const app = await boot({ geolocation: 'hang' });
+  const pending = app.elements.refresh.click();
+  await chooseCity(app);
+  assert.equal(app.elements.status.textContent, 'Observed', 'manual choice works while GPS hangs');
+  app.latePosition(); await pending; await settle();
+  assert.match(app.elements.meta.textContent, /Charlotte/);
+}
+for (const geolocation of ['denied', 'throw', 'invalid']) {
+  const app = await boot({ geolocation, storageBlocked: true });
+  await app.elements.refresh.click();
+  assert.equal(app.elements.refresh.disabled, false);
+  await chooseCity(app);
+  assert.equal(app.elements.status.textContent, 'Observed', 'manual path survives location and storage errors');
+}
+{
+  const app = await boot({ permission: 'denied', savedPlace: { latitude: 35.23, longitude: -80.84, label: 'Charlotte' } });
+  assert.equal(app.geoCalls, 0, 'saved city must not request geolocation');
+  assert.equal(app.elements.status.textContent, 'Observed');
+  await app.elements.refresh.click();
+  assert.equal(app.geoCalls, 0, 'refresh uses selected city');
+}
+{
+  const app = await boot({ failNws: true });
+  await chooseCity(app);
+  assert.equal(app.elements.status.textContent, 'Estimate');
+  assert.match(app.elements.temperature.innerHTML, /75/);
+}
+{
+  const app = await boot();
+  app.elements.placeQuery.value = 'a';
+  await app.elements.placeForm.listeners.get('submit')({ preventDefault() {} });
+  assert.equal(app.elements.placeResults.children.length, 0);
+  assert.match(app.elements.placeStatus.textContent, /at least/);
+}
+{
+  const app = await boot({ missingGeo: true, missingPermissions: true });
+  await app.elements.refresh.click();
+  assert.match(app.elements.errorMessage.textContent, /unavailable/);
+  await chooseCity(app);
+  assert.equal(app.elements.status.textContent, 'Observed');
+}
+{
+  const app = await boot({ emptySearch: true });
+  app.elements.placeQuery.value = 'no such place';
+  await app.elements.placeForm.listeners.get('submit')({ preventDefault() {} });
+  assert.equal(app.elements.placeResults.children.length, 0);
+  assert.match(app.elements.placeStatus.textContent, /No matches/);
+}
+{
+  const app = await boot({ geolocation: 'hang', hangWeather: true });
+  const pending = app.elements.refresh.click();
+  app.timers.get(55000)();
+  assert.equal(app.elements.refresh.disabled, false, 'overall watchdog releases UI');
+  assert.match(app.elements.errorMessage.textContent, /too long/);
+  app.latePosition(); await pending;
+  assert.equal(app.elements.status.textContent, 'Failed');
+}
+console.log('location-flow V&V: 22 scenarios passed');
