@@ -369,3 +369,12 @@ body.degraded .error-card h1 { font-size: clamp(1.4rem, 5vw, 2rem); }
 :focus-visible { outline: 3px solid #005bbb; outline-offset: 3px; }
 
 footer { display: block; }
+
+/* Keep help and current guidance together in one shared row. */
+.shell { grid-template-rows: auto 1fr auto; }
+.place-picker summary { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; list-style: none; cursor: pointer; }
+.place-picker summary::-webkit-details-marker { display: none; }
+.help-label { flex-shrink: 0; }
+.help-label::before { content: '▸ '; }
+details[open] .help-label::before { content: '▾ '; }
+.place-picker summary .meta { margin: 0; text-align: right; min-width: 0; }
