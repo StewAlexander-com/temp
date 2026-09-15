@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Temp°</title>
+  <meta name="application-name" content="Temp°">
+  <meta name="description" content="Local temperature, heat index, dew point, and humidity from the National Weather Service.">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Temp°">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Temp°">
+  <meta property="og:description" content="Local temperature, dew point, and humidity from the National Weather Service.">
+  <link rel="icon" href="./icons/weather-32.png" type="image/png" sizes="32x32">
+  <link rel="icon" href="./icons/weather-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png" sizes="180x180">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+      <div class="shell">
+        <header>
+          <div class="header-copy">
+            <p class="eyebrow">Local conditions</p>
+            <p class="last-updated"><time id="lastUpdated">Waiting for weather…</time></p>
+          </div>
+          <div id="status" class="status loading" role="status" aria-live="polite">Starting</div>
+        </header>
+
+        <main>
+          <a id="weatherAlert" class="weather-alert" href="https://www.weather.gov/alerts" target="_blank" rel="noopener noreferrer" role="alert" hidden>
+            <strong id="alertTitle">Weather warning</strong>
+            <span id="alertTime"></span>
+          </a>
+          <section id="reading" class="reading thermal-neutral" aria-label="Current weather" aria-busy="true">
+            <p id="temperature" class="temperature" data-width="standard" aria-label="Temperature loading">--<span class="unit">°F</span></p>
+            <p id="heatIndex" class="heat-index" hidden></p>
+            <p class="dewpoint">
+              <span class="weather-metric">Dew point <strong id="dewpoint">--°F</strong></span>
+              <span class="weather-divider" aria-hidden="true">·</span>
+              <span class="weather-metric">Humidity <strong id="humidity">--%</strong></span>
+            </p>
+          </section>
+
+          <section id="errorCard" class="error-card" hidden aria-live="assertive">
+            <p class="error-kicker">Update failed</p>
+            <h1 id="errorTitle">Weather unavailable</h1>
+            <p id="errorMessage">The weather could not be loaded.</p>
+            <p id="errorDetail" class="error-detail"></p>
+            <div class="error-actions">
+              <button id="errorRetry" class="refresh inverted" type="button">Retry now</button>
+              <a id="openBrowser" class="refresh" href="./" target="_blank" rel="noopener noreferrer" hidden>Open in browser</a>
+            </div>
+          </section>
+
+          <noscript>
+            <section class="error-card noscript-card">
+              <p class="error-kicker">JavaScript blocked</p>
+              <h1>Weather cannot start</h1>
+              <p>Enable JavaScript for this site, then reload the page.</p>
+              <a class="refresh inverted" href="./">Reload page</a>
+            </section>
+          </noscript>
+        </main>
+
+        <footer>
+          <p id="meta" class="meta">Your location is used only to request local weather from the National Weather Service.</p>
+          <button id="refresh" class="refresh" type="button">Use my location</button>
+        </footer>
+      </div>
+
+</body>
+</html>
