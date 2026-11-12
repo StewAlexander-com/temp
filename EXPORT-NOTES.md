@@ -24,3 +24,11 @@
 - CSS and installation icon files match the original source exactly.
 - Live NWS access and physical iPhone/Android installation were not exercised in
   this export session; the new GitHub deployment has not been published.
+
+## Later changes
+
+- November 11, 2026: the interface was redesigned. `docs/styles.css`,
+  `docs/index.html`, `docs/app.js`, `docs/manifest.webmanifest` and
+  `docs/hero.png` no longer match the version-27 export described above. The
+  icons and the original-source archive are unchanged. `SHA256SUMS.txt` reflects
+  the current files.
