@@ -397,6 +397,28 @@
     document.body.classList.remove('fatal', 'degraded');
   }
 
+  // The halo is painted by the reading itself: temperature chooses the pigment,
+  // humidity chooses how far it bleeds into the paper.
+  function thermalPigment(temperatureF) {
+    const neutral = 62;
+    const mix = (from, to, amount) => from + (to - from) * Math.min(1, Math.max(0, amount));
+    if (temperatureF <= neutral) {
+      const cold = (neutral - temperatureF) / 52;
+      return `oklch(${mix(0.925, 0.86, cold).toFixed(3)} ${mix(0.014, 0.058, cold).toFixed(3)} ${mix(225, 250, cold).toFixed(1)})`;
+    }
+    const warm = (temperatureF - neutral) / 40;
+    return `oklch(${mix(0.925, 0.86, warm).toFixed(3)} ${mix(0.014, 0.078, warm).toFixed(3)} ${mix(88, 38, warm).toFixed(1)})`;
+  }
+
+  function paintAtmosphere(temperatureF, humidityPercent) {
+    const style = elements.reading.style;
+    if (!style || typeof style.setProperty !== 'function') return;
+    style.setProperty('--humidity', (Math.min(100, Math.max(0, humidityPercent)) / 100).toFixed(2));
+    if (globalThis.CSS?.supports?.('color', 'oklch(0.9 0.05 240)')) {
+      style.setProperty('--thermal-halo', thermalPigment(temperatureF));
+    }
+  }
+
   function renderReading(weather, state) {
     const temperature = Math.round(weather.temperature);
     const dewpoint = Math.round(weather.dewpoint);
@@ -416,6 +438,7 @@
       : (temperature < 60 ? 'cool' : (temperature < 85 ? 'mild' : 'hot'));
     elements.reading.classList.remove('thermal-neutral', 'thermal-freezing', 'thermal-cool', 'thermal-mild', 'thermal-hot');
     elements.reading.classList.add(`thermal-${thermalBand}`);
+    paintAtmosphere(weather.temperature, humidity);
     elements.temperature.setAttribute('data-width', temperatureCharacters >= 4 ? 'extreme' : (temperatureCharacters >= 3 ? 'wide' : 'standard'));
     elements.temperature.innerHTML = `${temperature}<span class="unit">°F</span>`;
     elements.temperature.setAttribute('aria-label', `${temperature} degrees Fahrenheit`);
