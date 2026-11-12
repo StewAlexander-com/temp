@@ -6,7 +6,7 @@
   <title>Temp° — Local weather, large and readable</title>
   <meta name="application-name" content="Temp°">
   <meta name="description" content="See local temperature, dew point and humidity. Use device location or choose a city or ZIP. No account required.">
-  <meta name="theme-color" content="#ffffff">
+  <meta name="theme-color" content="#f6f6f3">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Temp°">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -34,14 +34,18 @@
   <link rel="icon" href="./icons/weather-192.png" type="image/png" sizes="192x192">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png" sizes="180x180">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./styles.css?v=5">
-  <script src="./app.js?v=5" defer></script>
+  <link rel="stylesheet" href="./styles.css?v=6">
+  <script src="./app.js?v=6" defer></script>
 </head>
 <body>
       <div class="shell">
         <header>
           <div class="header-copy">
-            <p class="eyebrow">Local conditions</p>
+            <p class="brand">
+              <svg class="mark" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9.5"/></svg>
+              <span class="wordmark">Temp°</span>
+              <span class="eyebrow">Local weather</span>
+            </p>
             <p class="last-updated"><time id="lastUpdated">Waiting for weather…</time></p>
           </div>
           <div id="status" class="status loading" role="status" aria-live="polite">Starting</div>
@@ -53,11 +57,12 @@
             <span id="alertTime"></span>
           </a>
           <section id="reading" class="reading thermal-neutral" aria-label="Current weather" aria-busy="true">
+            <p class="reading-label" aria-hidden="true">Current temperature</p>
             <p id="temperature" class="temperature" data-width="standard" aria-label="Temperature loading">--<span class="unit">°F</span></p>
             <p id="heatIndex" class="heat-index" hidden></p>
             <p class="dewpoint">
               <span class="weather-metric">Dew point <strong id="dewpoint">--°F</strong></span>
-              <span class="weather-divider" aria-hidden="true">·</span>
+              <span class="weather-divider" aria-hidden="true"></span>
               <span class="weather-metric">Humidity <strong id="humidity">--%</strong></span>
             </p>
           </section>
@@ -84,17 +89,20 @@
         </main>
 
         <section class="place-picker" aria-label="Choose weather location">
+          <div class="place-now">
+            <p id="meta" class="meta">Use device location or choose a city / ZIP.</p>
+            <button id="useDevice" class="refresh" type="button">Use device location</button>
+          </div>
           <form id="placeForm">
             <label for="placeQuery">City or ZIP — no location permission needed</label>
             <div class="place-inputs">
               <input id="placeQuery" type="search" maxlength="100" placeholder="City, state or ZIP" autocomplete="off" required aria-describedby="placeStatus">
-              <button id="placeSearch" class="refresh" type="submit">Find</button>
-              <button id="useDevice" class="refresh" type="button">Use device location</button>
+              <button id="placeSearch" class="refresh quiet" type="submit">Find</button>
             </div>
           </form>
           <p id="placeStatus" role="status" aria-live="polite"></p>
           <div id="placeResults" class="place-results"></div>
-          <details><summary><span class="help-label">Location help &amp; data</span><span id="meta" class="meta">Use device location or choose a city / ZIP.</span></summary>
+          <details><summary><span class="help-label">Location help &amp; data</span></summary>
             <p>In Facebook on iPhone, use the app menu to open this page in Safari if device location is blocked. Desktop viewers may also block location. You can always choose a city here when search is available.</p>
             <p>Home-screen apps may need their own location permission. A chosen city is remembered in this browser when storage is available; choose it again if another browser or home-screen app starts empty.</p>
             <p>City searches go to <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> (place data by GeoNames). Weather coordinates go to NWS, with Open-Meteo as a fallback. Estimates are labeled. Recent readings and your chosen place are stored on this device. Fresh weather requires internet access.</p>
