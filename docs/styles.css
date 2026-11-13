@@ -63,7 +63,7 @@ header {
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
     "heading status"
-    "weather weather";
+    "weather precip";
   column-gap: .9rem;
   row-gap: .7rem;
   align-items: center;
@@ -166,6 +166,55 @@ header:has(.status.loading) .mark circle { animation: turn 6s linear infinite; }
   text-overflow: ellipsis;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/* One small mark for what is falling. It lives in the header, well away from
+   the number. Each kind has its own pigment: rain blue, snow white with a thin
+   dark rim, lightning yellow. Full colour: station and model agree. A wash of
+   the same colour: only one of them, or not yet. */
+.precipitation {
+  --rain: #2a72bd;
+  --bolt: #f5c62c;
+  --bolt-rim: #86640a;
+  --snow: #ffffff;
+  grid-area: precip;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: .45em;
+  color: var(--muted);
+  font-size: clamp(.82rem, 2.6vw, .92rem);
+  line-height: 1.4;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.precipitation[hidden] { display: none; }
+.precipitation svg {
+  flex: 0 0 auto;
+  width: 1.2rem;
+  height: 1.2rem;
+  overflow: visible;
+  fill: none;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.precipitation.rain .body { stroke: var(--rain); fill: var(--rain); fill-opacity: .16; }
+.precipitation.rain.now .body { fill-opacity: 1; }
+
+.precipitation.storm .body { stroke: var(--bolt-rim); stroke-width: 1; fill: var(--bolt); fill-opacity: .3; }
+.precipitation.storm.now .body { fill-opacity: 1; }
+
+/* The flake is drawn twice: a dark stroke, then a narrower white one on top,
+   which leaves a hairline rim around white arms. */
+.precipitation.snow .rim { stroke: var(--muted); stroke-width: 2.5; }
+.precipitation.snow .arms { stroke: var(--snow); stroke-width: 1.25; }
+.precipitation.snow.now .rim { stroke: var(--ink); stroke-width: 2.7; }
+
+@media (forced-colors: active) {
+  .precipitation .body, .precipitation .rim { stroke: CanvasText; }
+  .precipitation .arms { stroke: Canvas; }
 }
 
 /* ── The reading ────────────────────────────────────────── */

@@ -33,7 +33,7 @@ class Element {
   async click() { await this.listeners.get('click')?.(); }
 }
 
-const ids = ['placeForm', 'placeQuery', 'placeSearch', 'placeResults', 'placeStatus', 'useDevice', 'status', 'weatherAlert', 'alertTitle', 'alertTime', 'reading', 'temperature', 'heatIndex', 'dewpoint', 'humidity', 'lastUpdated', 'meta', 'refresh', 'errorCard', 'errorTitle', 'errorMessage', 'errorDetail', 'errorRetry', 'openBrowser'];
+const ids = ['placeForm', 'placeQuery', 'placeSearch', 'placeResults', 'placeStatus', 'useDevice', 'status', 'weatherAlert', 'alertTitle', 'alertTime', 'reading', 'temperature', 'heatIndex', 'dewpoint', 'humidity', 'precipitation', 'lastUpdated', 'meta', 'refresh', 'errorCard', 'errorTitle', 'errorMessage', 'errorDetail', 'errorRetry', 'openBrowser'];
 
 function weatherResponse(url, options) {
   const { approximateAvailable, stationProperties, alerts } = options;
@@ -48,7 +48,7 @@ async function settle() {
   for (let index = 0; index < 12; index += 1) await new Promise(resolve => setImmediate(resolve));
 }
 
-async function boot({ permission = 'prompt', geolocation = 'success', cachedLocation = false, policyAllows = true, approximateAvailable = false, stationProperties = null, alerts = [], savedPlace = null, storageBlocked = false, failNws = false, hangWeather = false, missingGeo = false, missingPermissions = false, emptySearch = false } = {}) {
+async function boot({ permission = 'prompt', geolocation = 'success', cachedLocation = false, policyAllows = true, approximateAvailable = false, stationProperties = null, alerts = [], savedPlace = null, storageBlocked = false, failNws = false, hangWeather = false, missingGeo = false, missingPermissions = false, emptySearch = false, nowcast = null } = {}) {
   const elements = Object.fromEntries(ids.map(id => [id, new Element(id)]));
   const storage = new Map();
   if (cachedLocation) storage.set('local-weather:last-location:v2', JSON.stringify({ latitude: 35, longitude: -80, accuracy: 20, savedAt: Date.now() }));
@@ -102,6 +102,7 @@ async function boot({ permission = 'prompt', geolocation = 'success', cachedLoca
     },
     fetch: async url => {
       if (String(url).includes('geocoding-api')) return { ok: true, json: async () => ({ results: emptySearch ? [] : [{ name: 'Charlotte', admin1: 'North Carolina', country: 'US', latitude: 35.23, longitude: -80.84 }] }) };
+      if (String(url).includes('minutely_15')) return nowcast === 'fail' ? { ok: false, status: 503 } : { ok: true, json: async () => (nowcast ? { minutely_15: nowcast() } : {}) };
       if (String(url).includes('api.open-meteo')) return { ok: true, json: async () => ({ current: { temperature_2m: 75, dew_point_2m: 60, wind_speed_10m: 5, time: Math.floor(Date.now()/1000) } }) };
       if (hangWeather) return new Promise(() => {});
       if (failNws) return { ok: false, status: 404 };
@@ -322,4 +323,60 @@ for (const geolocation of ['denied', 'throw', 'invalid']) {
   await chooseCity(app);
   assert.equal(app.elements.useDevice.textContent, 'Use device location', 'city mode must offer device location again');
 }
-console.log('location-flow V&V: 23 scenarios passed');
+
+// ── Precipitation mark ──────────────────────────────────────────────────
+const observed = (extra, ageMinutes = 5) => ({ temperature: { value: 10, unitCode: 'wmoUnit:degC' }, dewpoint: { value: 8, unitCode: 'wmoUnit:degC' }, timestamp: new Date(Date.now() - ageMinutes * 60000).toISOString(), stationName: 'Test station', ...extra });
+// Steps are stamped with the end of each 15-minute interval: [current, +15, +30, +45].
+const steps = (...codes) => () => {
+  const first = Math.ceil(Date.now() / 900000) * 900;
+  return { time: codes.map((_, index) => first + index * 900), weather_code: codes, precipitation: codes.map(code => (code >= 51 ? 0.6 : 0)), snowfall: codes.map(code => (code >= 71 && code <= 77 ? 0.4 : 0)) };
+};
+async function markFor(options) {
+  const app = await boot(options);
+  await app.elements.useDevice.click();
+  await settle();
+  assert.equal(app.elements.status.textContent, 'Observed', 'the mark must never change the reading status');
+  return app.elements.precipitation;
+}
+{
+  const mark = await markFor({ stationProperties: observed({ textDescription: 'Light Rain', presentWeather: [{ weather: 'rain', rawString: '-RA' }] }), nowcast: steps(61, 61, 61, 61) });
+  assert.equal(mark.hidden, false);
+  assert.equal(mark.className, 'precipitation rain now', 'station and model agreeing is a confirmed mark');
+  assert.ok(!mark.innerHTML.includes('min'), 'a confirmed mark carries no words');
+  assert.equal(mark.attributes.get('aria-label'), 'Rain now');
+}
+{
+  const mark = await markFor({ stationProperties: observed({ textDescription: 'Mostly Cloudy' }), nowcast: steps(3, 3, 3, 3) });
+  assert.equal(mark.hidden, true, 'dry station and dry model show nothing');
+}
+{
+  const mark = await markFor({ stationProperties: observed({ textDescription: 'Cloudy' }), nowcast: steps(3, 73, 73, 73) });
+  assert.equal(mark.className, 'precipitation snow soon');
+  assert.ok(mark.innerHTML.includes('15 min'), 'timing is the only text, and only before it starts');
+}
+{
+  const mark = await markFor({ stationProperties: observed({ textDescription: 'Cloudy' }), nowcast: steps(3, 3, 63, 95) });
+  assert.equal(mark.className, 'precipitation rain soon');
+  assert.ok(mark.innerHTML.includes('30 min'), 'a step beyond 30 minutes must not be reported');
+}
+{
+  const mark = await markFor({ stationProperties: observed({ textDescription: 'Thunderstorm Light Rain', presentWeather: [{ weather: 'thunderstorms', rawString: 'TS' }, { weather: 'rain', rawString: '-RA' }] }), nowcast: steps(61, 61, 61, 61) });
+  assert.equal(mark.className, 'precipitation storm now', 'storm outranks rain');
+}
+{
+  const mark = await markFor({ stationProperties: observed({ textDescription: 'Thunderstorm in Vicinity', presentWeather: [{ weather: 'thunderstorms', rawString: 'VCTS', inVicinity: true }] }), nowcast: steps(3, 3, 3, 3) });
+  assert.equal(mark.hidden, true, 'weather in the vicinity is not weather here');
+}
+{
+  const mark = await markFor({ stationProperties: observed({ textDescription: 'Light Snow' }), nowcast: 'fail' });
+  assert.equal(mark.className, 'precipitation snow likely', 'one source alone is only likely');
+}
+{
+  const mark = await markFor({ stationProperties: observed({ textDescription: 'Rain' }, 44), nowcast: steps(3, 3, 3, 3) });
+  assert.equal(mark.hidden, true, 'a station report older than 40 minutes no longer votes');
+}
+{
+  const mark = await markFor({ stationProperties: observed({ textDescription: 'Blowing Snow', presentWeather: [{ weather: 'snow', rawString: 'BLSN' }] }), nowcast: steps(3, 3, 3, 3) });
+  assert.equal(mark.hidden, true, 'blowing snow is not falling snow');
+}
+console.log('location-flow V&V: 32 scenarios passed');
