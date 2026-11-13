@@ -17,7 +17,7 @@
   const PRECIPITATION_NAME = { rain: 'Rain', snow: 'Snow', storm: 'Thunderstorm' };
   const PRECIPITATION_ICON = {
     rain: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path class="body" d="M12 3.5C12 3.5 6 10.5 6 15a6 6 0 0 0 12 0C18 10.5 12 3.5 12 3.5Z"/></svg>',
-    snow: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path class="arms" d="M12 3v18M9.8 5.2 12 7.4l2.2-2.2M9.8 18.8 12 16.6l2.2 2.2M4.2 7.5l15.6 9M5 10.5l3-.8-.8-3M19 13.5l-3 .8.8 3M4.2 16.5l15.6-9M7.2 17.3l.8-3-3-.8M16.8 6.7l-.8 3 3 .8"/></svg>',
+    snow: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path class="rim" d="M12 3v18M9.8 5.2 12 7.4l2.2-2.2M9.8 18.8 12 16.6l2.2 2.2M4.2 7.5l15.6 9M5 10.5l3-.8-.8-3M19 13.5l-3 .8.8 3M4.2 16.5l15.6-9M7.2 17.3l.8-3-3-.8M16.8 6.7l-.8 3 3 .8"/><path class="arms" d="M12 3v18M9.8 5.2 12 7.4l2.2-2.2M9.8 18.8 12 16.6l2.2 2.2M4.2 7.5l15.6 9M5 10.5l3-.8-.8-3M19 13.5l-3 .8.8 3M4.2 16.5l15.6-9M7.2 17.3l.8-3-3-.8M16.8 6.7l-.8 3 3 .8"/></svg>',
     storm: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path class="body" d="M13.5 3 6.5 13.5h5L10.5 21l7-10.5h-5Z"/></svg>'
   };
   const STORAGE = {

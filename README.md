@@ -34,7 +34,7 @@ Your selected city is remembered when browser storage is available. Weather upda
 |:--|:--|
 | **Temperature** | Large Fahrenheit numerals. The air behind them is tinted by the temperature and spreads wider as humidity rises. |
 | **Moisture** | Dew point and humidity. Heat index or wind chill when applicable. |
-| **Rain, snow, storms** | One small mark in the header, only when something is falling or due within 30 minutes. Filled when the nearest station and the 15-minute model agree; outlined when only one says so. A time appears only when it has not started yet. |
+| **Rain, snow, storms** | One small mark in the header, only when something is falling or due within 30 minutes. Rain is blue, snow white with a thin dark rim, lightning yellow. Full colour when the nearest station and the 15-minute model agree; a pale wash of the same colour when only one says so. A time appears only when it has not started yet. |
 | **Freshness** | Observation or forecast timestamps, with older readings clearly labeled. |
 | **Warnings** | Active NWS warnings when available. Alert lookup is supplemental, not a comprehensive emergency notification service. |
 | **Fallback** | A labeled Open-Meteo model estimate if NWS weather cannot be retrieved. |
