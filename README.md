@@ -34,9 +34,12 @@ Your selected city is remembered when browser storage is available. Weather upda
 |:--|:--|
 | **Temperature** | Large Fahrenheit numerals. The air behind them is tinted by the temperature and spreads wider as humidity rises. |
 | **Moisture** | Dew point and humidity. Heat index or wind chill when applicable. |
+| **Rain, snow, storms** | One small mark in the header, only when something is falling or due within 30 minutes. Filled when the nearest station and the 15-minute model agree; outlined when only one says so. A time appears only when it has not started yet. |
 | **Freshness** | Observation or forecast timestamps, with older readings clearly labeled. |
 | **Warnings** | Active NWS warnings when available. Alert lookup is supplemental, not a comprehensive emergency notification service. |
 | **Fallback** | A labeled Open-Meteo model estimate if NWS weather cannot be retrieved. |
+
+The precipitation mark is an estimate, not a radar reading. The station may be miles from you and reports about hourly, and the model can miss or misplace a small shower. A blank header does not guarantee dry weather.
 
 ## Desktop, Facebook and home screens.
 
@@ -46,7 +49,7 @@ For a home-screen shortcut, open the live app in Safari on iPhone or your browse
 
 ## Data and privacy.
 
-City and ZIP searches go to [Open-Meteo ↗](https://open-meteo.com/) using GeoNames place data. Weather coordinates go to the National Weather Service, with Open-Meteo as a fallback. The app saves your selected place and recent readings in this browser's local storage when available.
+City and ZIP searches go to [Open-Meteo ↗](https://open-meteo.com/) using GeoNames place data. Weather coordinates go to the National Weather Service and to Open-Meteo, which supplies the 15-minute rain and snow outlook and a fallback reading. The app saves your selected place and recent readings in this browser's local storage when available.
 
 ---
 
@@ -57,10 +60,10 @@ This repository contains the running app. GitHub Pages publishes `docs/` from `m
 | File | Role |
 |:--|:--|
 | `docs/index.html` | Interface and metadata |
-| `docs/app.js` | Location selection, weather, refresh behavior and the halo tint |
+| `docs/app.js` | Location selection, weather, refresh behavior, the halo tint and the precipitation mark |
 | `docs/styles.css` | Responsive presentation |
 | `docs/manifest.webmanifest`, icons | Home-screen metadata |
-| `tests/location-flow.test.mjs` | 23 regression scenarios |
+| `tests/location-flow.test.mjs` | 32 regression scenarios |
 
 <sub>PREVIEW A CHECKOUT</sub>
 

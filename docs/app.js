@@ -8,6 +8,18 @@
   const WEATHER_CACHE_MS = 6 * 60 * 60 * 1000;
   const OBSERVATION_STALE_MS = 45 * 60 * 1000;
   const ALERT_TIMEOUT_MS = 5 * 1000;
+  const NOWCAST_TIMEOUT_MS = 5 * 1000;
+  // A station report older than this no longer says what is falling now.
+  const STATION_SKY_FRESH_MS = 40 * 60 * 1000;
+  const QUARTER_HOUR_MS = 15 * 60 * 1000;
+  // Storm outranks snow, which outranks rain: only one mark is ever shown.
+  const PRECIPITATION_RANK = { rain: 1, snow: 2, storm: 3 };
+  const PRECIPITATION_NAME = { rain: 'Rain', snow: 'Snow', storm: 'Thunderstorm' };
+  const PRECIPITATION_ICON = {
+    rain: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path class="body" d="M12 3.5C12 3.5 6 10.5 6 15a6 6 0 0 0 12 0C18 10.5 12 3.5 12 3.5Z"/></svg>',
+    snow: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path class="arms" d="M12 3v18M9.8 5.2 12 7.4l2.2-2.2M9.8 18.8 12 16.6l2.2 2.2M4.2 7.5l15.6 9M5 10.5l3-.8-.8-3M19 13.5l-3 .8.8 3M4.2 16.5l15.6-9M7.2 17.3l.8-3-3-.8M16.8 6.7l-.8 3 3 .8"/></svg>',
+    storm: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path class="body" d="M13.5 3 6.5 13.5h5L10.5 21l7-10.5h-5Z"/></svg>'
+  };
   const STORAGE = {
     place: 'local-weather:selected-place:v1',
     location: 'local-weather:last-location:v2',
@@ -30,6 +42,7 @@
     heatIndex: document.getElementById('heatIndex'),
     dewpoint: document.getElementById('dewpoint'),
     humidity: document.getElementById('humidity'),
+    precipitation: document.getElementById('precipitation'),
     lastUpdated: document.getElementById('lastUpdated'),
     meta: document.getElementById('meta'),
     errorCard: document.getElementById('errorCard'),
@@ -288,6 +301,7 @@
           windChill: toFahrenheit(properties && properties.windChill),
           sourceTime: properties && properties.timestamp,
           sourceKind: 'observation',
+          sky: stationPrecipitation(properties),
           source: (properties && properties.stationName) || 'NWS station observation'
         };
         if (validReading(reading)) return reading;
@@ -536,6 +550,147 @@
     }
   }
 
+  // ── Precipitation mark ────────────────────────────────────────────────
+  // Two independent votes: what the nearest station's sensor reports, and what
+  // the HRRR 15-minute model says for this exact point. Each vote is a kind
+  // ('rain' | 'snow' | 'storm'), 'none' for dry, or null for "cannot say".
+
+  function heavierPrecipitation(left, right) {
+    if (!left || left === 'none') return right || left;
+    if (!right || right === 'none') return left;
+    return PRECIPITATION_RANK[right] > PRECIPITATION_RANK[left] ? right : left;
+  }
+
+  function precipitationFromWords(words, raw) {
+    if (/thunder|hail/.test(words) || /TS|GR/.test(raw)) return 'storm';
+    if (/snow|sleet|ice pellets|ice crystals|flurr|wintry/.test(words) || /SN|PL|SG|IC/.test(raw)) return 'snow';
+    if (/rain|drizzle|shower|precipitation/.test(words) || /RA|DZ|UP/.test(raw)) return 'rain';
+    return null;
+  }
+
+  function stationPrecipitation(properties) {
+    if (!properties) return null;
+    const phenomena = Array.isArray(properties.presentWeather) ? properties.presentWeather : [];
+    const text = typeof properties.textDescription === 'string' ? properties.textDescription.trim() : '';
+    if (!phenomena.length && !text) return null;
+    let kind = 'none';
+    for (const phenomenon of phenomena) {
+      if (!phenomenon) continue;
+      const raw = String(phenomenon.rawString || '').toUpperCase();
+      // "In the vicinity" means not at the station, so it is not a vote for "falling here".
+      if (phenomenon.inVicinity === true || raw.startsWith('VC')) continue;
+      // Blowing or drifting snow is already on the ground, not falling.
+      if (/^[-+]?(BL|DR)/.test(raw)) continue;
+      const words = String(phenomenon.weather || '').toLowerCase().replace(/_/g, ' ').replace(/(blowing|drifting)\s+snow/g, '');
+      kind = heavierPrecipitation(kind, precipitationFromWords(words, raw));
+    }
+    if (kind === 'none' && text) {
+      const here = text.toLowerCase()
+        .replace(/(thunderstorms?|showers?|rain|snow|precipitation)\s+in\s+vicinity/g, '')
+        .replace(/(blowing|drifting)\s+snow/g, '');
+      kind = heavierPrecipitation(kind, precipitationFromWords(here, ''));
+    }
+    return kind;
+  }
+
+  function modelPrecipitation(code, amountMm, snowfallCm) {
+    const hasCode = Number.isFinite(code);
+    const hasAmount = Number.isFinite(amountMm);
+    if (!hasCode && !hasAmount) return null;
+    if (hasCode && code >= 95) return 'storm';
+    const wet = hasAmount && amountMm >= 0.1;
+    const snowCode = hasCode && ((code >= 71 && code <= 77) || code === 85 || code === 86);
+    if (snowCode || (wet && Number.isFinite(snowfallCm) && snowfallCm > 0)) return 'snow';
+    const rainCode = hasCode && ((code >= 51 && code <= 67) || (code >= 80 && code <= 82));
+    if (rainCode || wet) return 'rain';
+    return 'none';
+  }
+
+  // Each 15-minute step is stamped with the END of the interval it covers.
+  function readModelSteps(data, now) {
+    const series = data && data.minutely_15;
+    const times = series && Array.isArray(series.time) ? series.time : [];
+    const steps = [];
+    for (let index = 0; index < times.length; index += 1) {
+      const end = Number(times[index]) * 1000;
+      if (!Number.isFinite(end) || end < now) continue;
+      steps.push({
+        end,
+        kind: modelPrecipitation(
+          series.weather_code && series.weather_code[index],
+          series.precipitation && series.precipitation[index],
+          series.snowfall && series.snowfall[index]
+        )
+      });
+    }
+    steps.sort((left, right) => left.end - right.end);
+    const current = steps[0];
+    if (!current || current.end - now > QUARTER_HOUR_MS || current.kind === null) return null;
+    let soon = null;
+    steps.slice(1, 3).forEach((step, index) => {
+      if (!step.kind || step.kind === 'none') return;
+      if (!soon) soon = { kind: step.kind, minutes: (index + 1) * 15 };
+      else soon.kind = heavierPrecipitation(soon.kind, step.kind);
+    });
+    return { now: current.kind, soon };
+  }
+
+  function decidePrecipitation(station, model) {
+    const stationWet = station && station !== 'none';
+    const modelWet = model && model.now && model.now !== 'none';
+    // The sensor decides the kind; the model only confirms that something is falling.
+    if (stationWet && modelWet) return { kind: station, state: 'now' };
+    if (stationWet) return { kind: station, state: 'likely' };
+    if (modelWet) return { kind: model.now, state: 'likely' };
+    if (model && model.soon) return { kind: model.soon.kind, state: 'soon', minutes: model.soon.minutes };
+    return null;
+  }
+
+  function renderPrecipitation(result) {
+    const mark = elements.precipitation;
+    if (!mark) return;
+    if (!result) {
+      mark.hidden = true;
+      mark.className = 'precipitation';
+      mark.innerHTML = '';
+      return;
+    }
+    const name = PRECIPITATION_NAME[result.kind];
+    const spoken = result.state === 'now' ? `${name} now`
+      : result.state === 'likely' ? `${name} likely nearby`
+      : `${name} expected within ${result.minutes} minutes`;
+    mark.className = `precipitation ${result.kind} ${result.state}`;
+    // Words appear only for what the mark cannot show: when it starts.
+    mark.innerHTML = PRECIPITATION_ICON[result.kind]
+      + (result.state === 'soon' ? `<span class="precipitation-when">${result.minutes} min</span>` : '');
+    mark.setAttribute('aria-label', spoken);
+    mark.setAttribute('title', spoken);
+    mark.hidden = false;
+  }
+
+  async function updatePrecipitation(coordinates, weather, id) {
+    if (!elements.precipitation) return;
+    const age = Date.now() - (validTimestamp(weather.sourceTime) ?? 0);
+    const station = weather.sourceKind === 'observation' && age <= STATION_SKY_FRESH_MS ? (weather.sky ?? null) : null;
+    let model = null;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), NOWCAST_TIMEOUT_MS);
+    try {
+      const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${coordinates.latitude.toFixed(4)}&longitude=${coordinates.longitude.toFixed(4)}&minutely_15=precipitation,snowfall,weather_code&past_minutely_15=1&forecast_minutely_15=5&timeformat=unixtime`, {
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: { Accept: 'application/json' }
+      });
+      if (response.ok) model = readModelSteps(await response.json(), Date.now());
+    } catch (_) {
+      // The mark is supplemental. A failed lookup never blocks or downgrades the reading.
+    } finally {
+      window.clearTimeout(timeout);
+    }
+    if (id !== requestId) return;
+    renderPrecipitation(decidePrecipitation(station, model));
+  }
+
   function renderLoading() {
     hideError();
     elements.reading.setAttribute('aria-busy', 'true');
@@ -594,6 +749,7 @@
     elements.errorCard.hidden = false;
     elements.status.className = 'status error';
     elements.status.textContent = 'Failed';
+    renderPrecipitation(null);
     displayFailed = true;
     elements.reading.setAttribute('aria-busy', 'false');
     document.body.classList.add(hasReading ? 'degraded' : 'fatal');
@@ -644,6 +800,7 @@
       renderReading(weather, 'live');
       writeCache(STORAGE.weather, weather);
       void updateAlerts(coordinates, id);
+      void updatePrecipitation(coordinates, weather, id);
       hideError();
     } catch (error) {
       if (id !== requestId) return;
@@ -660,6 +817,7 @@
 
   function changePlace(place) {
     ++requestId; // Late device and weather responses must not overwrite a new choice.
+    renderPrecipitation(null);
     busy = false;
     selectedPlace = place;
     elements.useDevice.textContent = 'Use device location';
